@@ -33,29 +33,29 @@ public class PlayerController : MonoBehaviour
     public LayerMask wallLayer;
 
     [Header("Dash Settings")]
-    public float dashSpeed = 16f;
+    public float dashSpeed = 12f;
     public float dashTime = 0.15f;
+    public float dashEndDeceleration = 0.1f;
     private bool canDash = true;
     private bool hasDashed;
 
     [Header("Ground Detection")]
     public Transform groundCheck;
     public LayerMask groundLayer;
-    public float groundCheckDistance = 0.2f; // ✅ Adjust ground detection distance
+    public float groundCheckDistance = 0.3f;
 
     void Start()
     {
         rb = GetComponent<Rigidbody2D>();
+        rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
     }
 
     void Update()
     {
         float moveInput = Input.GetAxisRaw("Horizontal");
 
-        // 🟢 Fix Ground Detection Issue using Raycast
         isGrounded = CheckIfGrounded();
 
-        // 🟢 Coyote Time: Allows forgiving jumps
         if (isGrounded)
         {
             coyoteCounter = coyoteTime;
@@ -67,13 +67,11 @@ public class PlayerController : MonoBehaviour
             coyoteCounter -= Time.deltaTime;
         }
 
-        // 🟢 Jump Buffer: Stores jump input before landing
         if (Input.GetButtonDown("Jump"))
             jumpBufferCounter = jumpBufferTime;
         else
             jumpBufferCounter -= Time.deltaTime;
 
-        // 🟢 Jump (Only if grounded or in coyote time)
         if (jumpBufferCounter > 0 && coyoteCounter > 0 && !hasJumped)
         {
             rb.velocity = new Vector2(rb.velocity.x, jumpForce);
@@ -82,7 +80,6 @@ public class PlayerController : MonoBehaviour
             hasJumped = true;
         }
 
-        // 🟢 Variable Jump Height (Hold for higher jump)
         if (Input.GetButtonUp("Jump") && rb.velocity.y > 0)
         {
             rb.velocity = new Vector2(rb.velocity.x, rb.velocity.y * variableJumpMultiplier);
@@ -108,23 +105,23 @@ public class PlayerController : MonoBehaviour
             coyoteCounter = 0;
         }
 
-        // 🟢 Dash (Limited to once per air time)
         if (Input.GetKeyDown(KeyCode.LeftShift) && canDash && !hasDashed)
         {
             StartCoroutine(Dash(moveInput));
             hasDashed = true;
         }
 
-        // 🟢 Apply Movement
-        float targetSpeed = moveInput * moveSpeed;
-        float speedDifference = targetSpeed - rb.velocity.x;
-        float accelerationRate = isGrounded ? acceleration : acceleration * airControl;
-        float movement = speedDifference * accelerationRate * Time.deltaTime;
+        if (!isDashing)
+        {
+            float targetSpeed = moveInput * moveSpeed;
+            float speedDifference = targetSpeed - rb.velocity.x;
+            float accelerationRate = isGrounded ? acceleration : acceleration * airControl;
+            float movement = speedDifference * accelerationRate * Time.deltaTime;
 
-        rb.velocity = new Vector2(rb.velocity.x + movement, rb.velocity.y);
+            rb.velocity = new Vector2(rb.velocity.x + movement, rb.velocity.y);
+        }
 
-        // 🟢 Apply Ground Friction (Prevents Sudden Stops)
-        if (moveInput == 0 && isGrounded)
+        if (moveInput == 0 && isGrounded && !isDashing)
         {
             rb.velocity = new Vector2(rb.velocity.x * groundFriction, rb.velocity.y);
         }
@@ -134,21 +131,45 @@ public class PlayerController : MonoBehaviour
     {
         isDashing = true;
         canDash = false;
-        rb.velocity = new Vector2(moveInput * dashSpeed, 0);
+        rb.gravityScale = 0;
+        float originalFriction = groundFriction;
+        float originalAcceleration = acceleration;
+
+        groundFriction = 1f;
+        acceleration = 0;
+
+        float dashDirection = moveInput != 0 ? moveInput : (transform.localScale.x > 0 ? 1 : -1);
+        rb.velocity = new Vector2(dashDirection * dashSpeed, 0);
+
         yield return new WaitForSeconds(dashTime);
+
+        rb.gravityScale = 1;
         isDashing = false;
+
+        StartCoroutine(DashEndDeceleration(dashDirection));
+
+        groundFriction = originalFriction;
+        acceleration = originalAcceleration;
+
         yield return new WaitForSeconds(0.5f);
         canDash = true;
     }
 
+    private IEnumerator DashEndDeceleration(float dashDirection)
+    {
+        float t = 0;
+        while (t < 1)
+        {
+            rb.velocity = new Vector2(Mathf.Lerp(rb.velocity.x, 0, t), rb.velocity.y);
+            t += dashEndDeceleration;
+            yield return new WaitForEndOfFrame();
+        }
+    }
+
     private bool CheckIfGrounded()
     {
-        // 🟢 Raycast Ground Check - More Accurate than OverlapCircle
         RaycastHit2D hit = Physics2D.Raycast(groundCheck.position, Vector2.down, groundCheckDistance, groundLayer);
-
-        // ✅ Draw Debug Line in Scene View
         Debug.DrawRay(groundCheck.position, Vector2.down * groundCheckDistance, hit.collider != null ? Color.green : Color.red);
-
         return hit.collider != null && rb.velocity.y <= 0.1f;
     }
 }
