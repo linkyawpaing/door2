@@ -31,12 +31,18 @@ public class PlayerController : MonoBehaviour
     public float wallSlideSpeed = 2f;
     public float wallJumpForceX = 8f;
     public float wallJumpForceY = 14f;
-    private bool isTouchingWall;
-    public Transform wallCheck;
+    private bool frontisTouchingWall;
+    private bool backisTouchingWall;
+    public Transform frontwallCheck;
+    public Transform backwallCheck;
     public LayerMask wallLayer;
     private float wallJumpCooldown = 0.2f;
     private float wallStickTime = 0.1f;
     private float wallJumpTimer = 0f;
+
+    [Header("Coyote Time Settings")]
+    public float wallCoyoteTime = 0.15f;
+    private float wallCoyoteCounter;
 
     [Header("Dash Settings")]
     public float dashSpeed = 12f;
@@ -53,7 +59,7 @@ public class PlayerController : MonoBehaviour
     void Start()
     {
         rb = GetComponent<Rigidbody2D>();
-        animator = GetComponent<Animator>(); 
+        animator = GetComponent<Animator>();
         rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
     }
 
@@ -65,13 +71,21 @@ public class PlayerController : MonoBehaviour
         HandleFlip();
         HandleDash();
         HandleAnimations();
+        AdjustGravity();
     }
 
-    // ✅ Handles Movement
+    private void AdjustGravity() {
+        // Increase gravity scale when falling
+        if (!isGrounded && rb.velocity.y < 0) {
+            rb.gravityScale = 2.0f; // Adjust this value as needed
+        } else {
+            rb.gravityScale = 1.0f; // Reset to normal gravity
+        }
+    }
+
     private void HandleMovement()
     {
         float moveInput = Input.GetAxisRaw("Horizontal");
-
         if (!isDashing && !isWallJumping)
         {
             float targetSpeed = moveInput * moveSpeed;
@@ -88,7 +102,6 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // ✅ Handles Jump Logic
     private void HandleJump()
     {
         isGrounded = CheckIfGrounded();
@@ -104,48 +117,67 @@ public class PlayerController : MonoBehaviour
             coyoteCounter -= Time.deltaTime;
         }
 
+        // Jump input starts
         if (Input.GetButtonDown("Jump"))
             jumpBufferCounter = jumpBufferTime;
         else
             jumpBufferCounter -= Time.deltaTime;
 
-        if (jumpBufferCounter > 0 && coyoteCounter > 0 && !hasJumped)
-        {
+        // Handle initial jump
+        if (jumpBufferCounter > 0 && (coyoteCounter > 0 || wallCoyoteCounter > 0) && !hasJumped) {
             rb.velocity = new Vector2(rb.velocity.x, jumpForce);
             jumpBufferCounter = 0;
             coyoteCounter = 0;
+            wallCoyoteCounter = 0;
             hasJumped = true;
+            StartCoroutine(HandleContinuedJump());
         }
 
-        if (Input.GetButtonUp("Jump") && rb.velocity.y > 0)
-        {
+        // Reduce upward force when jump button is released
+        if (Input.GetButtonUp("Jump") && rb.velocity.y > 0) {
             rb.velocity = new Vector2(rb.velocity.x, rb.velocity.y * variableJumpMultiplier);
         }
     }
 
-    // ✅ Handles Wall Sliding & Wall Jumping
+    private IEnumerator HandleContinuedJump() {
+        float timeHeld = 0f;
+        float maxJumpTime = 0.2f;  // Maximum time the jump force can be applied
+
+        while (Input.GetButton("Jump") && timeHeld < maxJumpTime) {
+            if (rb.velocity.y > 0) {  // Only apply force if player is still moving up
+                rb.AddForce(Vector2.up * (jumpForce * 0.5f));  // Continue adding upward force
+            }
+            timeHeld += Time.deltaTime;
+            yield return null;
+        }
+    }
+
     private void HandleWallInteraction()
     {
-        isTouchingWall = Physics2D.OverlapCircle(wallCheck.position, 0.2f, wallLayer);
+        frontisTouchingWall = Physics2D.OverlapCircle(frontwallCheck.position, 0.2f, wallLayer);
+        backisTouchingWall = Physics2D.OverlapCircle(backwallCheck.position, 0.2f, wallLayer);
 
-        if (isTouchingWall && !isGrounded && rb.velocity.y < 0)
+        if ((frontisTouchingWall || backisTouchingWall) && !isGrounded && rb.velocity.y < 0)
         {
             isWallSliding = true;
             isWallJumping = false;
             rb.gravityScale = 0;
             rb.velocity = new Vector2(rb.velocity.x, -wallSlideSpeed);
             animator.SetBool("IsClimb", true);
+
+            wallCoyoteCounter = wallCoyoteTime;
         }
         else
         {
             isWallSliding = false;
             rb.gravityScale = 1;
             animator.SetBool("IsClimb", false);
+            wallCoyoteCounter -= Time.deltaTime;
         }
 
-        if (isWallSliding && Input.GetButtonDown("Jump"))
+        if (Input.GetButtonDown("Jump") && (isWallSliding || wallCoyoteCounter > 0))
         {
-            WallJump();
+            WallJump(frontisTouchingWall);
         }
 
         if (wallJumpTimer > 0)
@@ -154,44 +186,47 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    private void WallJump()
+    private void WallJump(bool isFrontWall)
     {
-        float jumpDirection = isFacingRight ? -1 : 1;
-        isWallJumping = true;
-        wallJumpTimer = wallJumpCooldown;
+        float jumpDirection = isFrontWall ? (isFacingRight ? -1 : 1) : (isFacingRight ? 1 : -1);
+
         rb.velocity = Vector2.zero;
         rb.AddForce(new Vector2(wallJumpForceX * jumpDirection, wallJumpForceY), ForceMode2D.Impulse);
+
+        if (isFrontWall != isFacingRight)
+        {
+            Flip();
+        }
+
+        isWallJumping = true;
+        wallJumpTimer = wallJumpCooldown;
+        coyoteCounter = coyoteTime;
+        wallCoyoteCounter = 0;
+
         StartCoroutine(DisableWallStick());
     }
 
-    private IEnumerator DisableWallStick()
-    {
-        isWallSliding = false;
-        yield return new WaitForSeconds(wallStickTime);
-        isWallJumping = false;
-    }
-
-    // ✅ Handles Flip Logic
     private void HandleFlip()
     {
         float moveInput = Input.GetAxisRaw("Horizontal");
 
         if ((moveInput > 0 && !isFacingRight) || (moveInput < 0 && isFacingRight))
         {
-            isFacingRight = !isFacingRight;
-            Vector3 scale = transform.localScale;
-            scale.x *= -1;
-            transform.localScale = scale;
+            Flip();
         }
     }
 
-    // ✅ Handles Dash
+    private void Flip()
+    {
+        isFacingRight = !isFacingRight;
+        transform.localScale = new Vector3(-transform.localScale.x, transform.localScale.y, transform.localScale.z);
+    }
+
     private void HandleDash()
     {
-        if (Input.GetKeyDown(KeyCode.LeftShift) && canDash && !hasDashed)
+        if (Input.GetKeyDown(KeyCode.LeftShift) && canDash && !hasDashed && !isWallSliding)
         {
             StartCoroutine(Dash());
-            hasDashed = true;
         }
     }
 
@@ -201,39 +236,61 @@ public class PlayerController : MonoBehaviour
         canDash = false;
         rb.gravityScale = 0;
         float dashDirection = isFacingRight ? 1 : -1;
-        rb.velocity = new Vector2(dashDirection * dashSpeed, 0);
+        rb.velocity = new Vector2(dashDirection * dashSpeed, rb.velocity.y);
 
         yield return new WaitForSeconds(dashTime);
 
         rb.gravityScale = 1;
         isDashing = false;
 
-        yield return new WaitForSeconds(0.5f);
+        yield return new WaitForSeconds(0.1f); // Short cooldown after dashing
         canDash = true;
     }
 
-    // ✅ Handles Animations
-    private void HandleAnimations()
-    {
-        float moveInput = Input.GetAxisRaw("Horizontal");
-
-        animator.SetBool("IsRunning", moveInput != 0);
-        animator.SetBool("IsGrounded", isGrounded);
-        animator.SetBool("IsFalling", rb.velocity.y < 0 && !isGrounded);
-        animator.SetBool("IsWallSliding", isWallSliding);
-        animator.SetBool("IsDashing", isDashing);
-
-        if (Input.GetButtonDown("Jump") && isGrounded)
-        {
-            animator.SetTrigger("Jump");
-        }
-    }
-
-    // ✅ Ground Detection
     private bool CheckIfGrounded()
     {
         RaycastHit2D hit = Physics2D.Raycast(groundCheck.position, Vector2.down, groundCheckDistance, groundLayer);
-        Debug.DrawRay(groundCheck.position, Vector2.down * groundCheckDistance, hit.collider != null ? Color.green : Color.red);
         return hit.collider != null && rb.velocity.y <= 0.1f;
     }
+
+    private IEnumerator DisableWallStick()
+    {
+        isWallSliding = false;
+        yield return new WaitForSeconds(wallStickTime);
+        isWallJumping = false;
+    }
+    private void HandleAnimations() {
+        animator.SetBool("isRunning", Mathf.Abs(rb.velocity.x) > 0.1f);
+        animator.SetBool("isGrounded", isGrounded);
+        animator.SetBool("isJumping", rb.velocity.y > 0);
+        
+        // Here we ensure the falling animation is played when the player is descending
+        bool currentlyFalling = !isGrounded && rb.velocity.y < 0;
+        animator.SetBool("isFalling", currentlyFalling);
+
+        animator.SetBool("isWallSliding", isWallSliding);
+        animator.SetBool("isDashing", isDashing);
+
+        if (isWallSliding) {
+            animator.SetBool("isClimbing", true);
+        } else {
+            animator.SetBool("isClimbing", false);
+        }
+
+        // Use this logic to handle jump and fall transitions smoothly
+        if (!isGrounded && rb.velocity.y < 0) {
+            animator.SetBool("isJumping", false);
+            animator.SetBool("isFalling", true);
+        } else if (rb.velocity.y > 0) {
+            animator.SetBool("isJumping", true);
+            animator.SetBool("isFalling", false);
+        }
+
+        if (isGrounded) {
+            animator.SetBool("isJumping", false);
+            animator.SetBool("isFalling", false);
+        }
+}
+
+
 }
