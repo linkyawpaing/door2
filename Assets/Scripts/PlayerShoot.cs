@@ -59,37 +59,64 @@ public class PlayerShooting : MonoBehaviour
             Vector3 screenPosition = Mouse.current.position.ReadValue();
             screenPosition.z = 7;
             Vector3 dragEndPos = Camera.main.ScreenToWorldPoint(screenPosition);
-            dragEndPos.z = 0;
-            Vector2 plydir = dragEndPos - Player.transform.position;
+            dragEndPos.z = 7;
+            Vector2 plydir = dragEndPos - Stick.transform.position;
 
             Vector3 shootingDirection = dragEndPos - shootPoint.position;
             shootingDirection.z = 0; // Ensure it's purely in 2D
             float angle = Vector3.Angle(shootPoint.right, shootingDirection.normalized);
 
-            // UpdateTrajectory(shootPoint.position, dragEndPos);
+            UpdateTrajectory(shootPoint.position, dragEndPos);
 
 
             // Debug.Log("facingRight is+ "+ facingRight);
-            Debug.Log("Player AngleRight + "+ Vector3.Angle(Player.transform.right, dragEndPos));
-            Debug.Log("Player AngleUP + "+ Vector3.Angle(Player.transform.up, dragEndPos));
-            Debug.Log("Player AngleDown - "+ Vector3.Angle(-Player.transform.up, dragEndPos));
-            Debug.Log("ShootPoint AngleRight + "+ Vector3.Angle(shootPoint.right, shootingDirection.normalized));
-            Debug.Log("ShootPoint AngleUP + "+ Vector3.Angle(shootPoint.up , dragEndPos));
-            Debug.Log("ShootPoint AngleDown - "+ Vector3.Angle(-shootPoint.up,dragEndPos));
-            if (Vector3.Angle(shootPoint.up , shootingDirection.normalized) > 20f && Vector3.Angle(-shootPoint.up,shootingDirection.normalized) > 60f)
+            // Debug.Log("Player AngleRight + "+ Vector3.Angle(Player.transform.right, dragEndPos));
+            // Debug.Log("Player AngleUP + "+ Vector3.Angle(Player.transform.up, dragEndPos));
+            // Debug.Log("Player AngleDown - "+ Vector3.Angle(-Player.transform.up, dragEndPos));
+            // Debug.Log("ShootPoint AngleRight + "+ Vector3.Angle(shootPoint.right, shootingDirection.normalized));
+            // Debug.Log("ShootPoint AngleUP + "+ Vector3.Angle(shootPoint.up , dragEndPos));
+            // Debug.Log("ShootPoint AngleDown - "+ Vector3.Angle(-shootPoint.up,dragEndPos));
+            
+            Debug.Log("ShootPoint AngleRight + "+ Vector3.Angle(Player.transform.up , plydir));
+            Debug.Log("ShootPoint AngleUP + "+ Vector3.Angle(-Player.transform.up, plydir));
+            Debug.Log("ShootPoint AngleDown - "+ (Vector3.Angle(Player.transform.right, plydir)));
+            // if (Vector3.Angle(Player.transform.up , plydir) > 20f && Vector3.Angle(-Player.transform.up, plydir) > 60f)
+            // {
+            //     if (Vector3.Angle(Player.transform.right, plydir) > 90 && pc.isFacingRight)
+            //     {
+            //         Stick.transform.position = Right.position;
+            //         pc.Flip();
+            //     }
+            //     else if (Vector3.Angle(Player.transform.right, plydir) < 90 && (!pc.isFacingRight))
+            //     {
+            //         Stick.transform.position = Right.position;
+            //         pc.Flip();
+            //     }
+            // }
+
+            if (Vector3.Angle(Player.transform.up , plydir) > 20f && Vector3.Angle(-Player.transform.up, plydir) > 60f)
             {
-                if (Vector3.Angle(shootPoint.right, shootingDirection.normalized) > 90 && pc.isFacingRight)
+                if (Vector3.Dot(Player.transform.right, plydir) < 0 && pc.isFacingRight)
                 {
                     Stick.transform.position = Right.position;
                     pc.Flip();
                 }
-                else if (Vector3.Angle(shootPoint.right, shootingDirection.normalized) < 90 && (!pc.isFacingRight))
+                else if (Vector3.Dot(Player.transform.right, plydir) > 0 && (!pc.isFacingRight))
                 {
                     Stick.transform.position = Right.position;
                     pc.Flip();
-                }
+                }   
             }
-            Stick.transform.right = plydir;
+
+            if ((Vector3.Angle(Player.transform.right, plydir)) <= maxShootingAngle && pc.isFacingRight)
+            {
+                    Stick.transform.right = plydir;
+            }
+            else if ((Vector3.Angle(Player.transform.right, plydir)) >= maxShootingAngle*2 && !pc.isFacingRight)
+            {
+                    Stick.transform.right = -plydir;
+            }
+            
         }
 
         if (Mouse.current.leftButton.wasReleasedThisFrame && cooldownTimer <= 0)
@@ -108,29 +135,31 @@ public class PlayerShooting : MonoBehaviour
 
     private void Shoot(Vector3 dragEndPos)
     {
-        Vector3 shootingDirection = dragEndPos - shootPoint.position;
+        Vector3 shootingDirection = dragEndPos - Stick.transform.position;
         shootingDirection.z = 0; // Ensure it's purely in 2D
 
-        float angle = Vector3.Angle(shootPoint.right, shootingDirection.normalized);
+        float angle = Vector3.Angle(Player.transform.right, shootingDirection.normalized);
         // if (angle > maxShootingAngle)
         // {
         //     angle = maxShootingAngle;
         // }
         Debug.Log("Angle is "+ angle);
-        if (angle <= maxShootingAngle)
+
+        if (pc.isFacingRight)
         {
             Vector2 force = shootingDirection.normalized * shootingPower;
             GameObject projectile = Instantiate(projectilePrefab, shootPoint.position, shootPoint.rotation);
-            projectile.GetComponent<Rigidbody2D>().AddForce(force, ForceMode2D.Impulse);
+            projectile.GetComponent<Rigidbody2D>().AddForce(shootPoint.right*shootingPower, ForceMode2D.Impulse);
             pc.Recoil(pc.isFacingRight);
         }
         else
         {
-            Vector2 force = shootingDirection.normalized * shootingPower;
+            Vector2 force = -shootingDirection.normalized * shootingPower;
             GameObject projectile = Instantiate(projectilePrefab, shootPoint.position, shootPoint.rotation);
-            projectile.GetComponent<Rigidbody2D>().AddForce(force, ForceMode2D.Impulse);
+            projectile.GetComponent<Rigidbody2D>().AddForce(-shootPoint.right*shootingPower, ForceMode2D.Impulse);
             pc.Recoil(pc.isFacingRight);
         }
+
 
 
     }

@@ -10,7 +10,7 @@ public class PlayerController : MonoBehaviour
     private bool isWallJumping;
     private bool isDashing;
     private bool hasJumped;
-    private bool isFacingRight = true;
+    public bool isFacingRight = true;
 
     [Header("Movement Settings")]
     public float moveSpeed = 8f;
@@ -141,7 +141,7 @@ public class PlayerController : MonoBehaviour
 
     private IEnumerator HandleContinuedJump() {
         float timeHeld = 0f;
-        float maxJumpTime = 0.2f;  // Maximum time the jump force can be applied
+        float maxJumpTime = 0.1f;  // Maximum time the jump force can be applied
 
         while (Input.GetButton("Jump") && timeHeld < maxJumpTime) {
             if (rb.velocity.y > 0) {  // Only apply force if player is still moving up
@@ -206,19 +206,20 @@ public class PlayerController : MonoBehaviour
         StartCoroutine(DisableWallStick());
     }
 
-    private void HandleFlip()
+    public void HandleFlip()
     {
         float moveInput = Input.GetAxisRaw("Horizontal");
 
-        if ((moveInput > 0 && !isFacingRight) || (moveInput < 0 && isFacingRight))
+        if ((moveInput > 0 && !isFacingRight && !isDashing) || (moveInput < 0 && isFacingRight && !isDashing))
         {
             Flip();
         }
     }
 
-    private void Flip()
+    public void Flip()
     {
         isFacingRight = !isFacingRight;
+        // transform.Find("Stick").localScale = transform.Find("Stick").localScale * new Vector2(-1, 1);
         transform.localScale = new Vector3(-transform.localScale.x, transform.localScale.y, transform.localScale.z);
     }
 
@@ -241,9 +242,9 @@ public class PlayerController : MonoBehaviour
         yield return new WaitForSeconds(dashTime);
 
         rb.gravityScale = 1;
-        isDashing = false;
 
         yield return new WaitForSeconds(0.1f); // Short cooldown after dashing
+        isDashing = false;
         canDash = true;
     }
 
@@ -290,7 +291,22 @@ public class PlayerController : MonoBehaviour
             animator.SetBool("isJumping", false);
             animator.SetBool("isFalling", false);
         }
-}
+    }
+
+    public void Recoil(bool fac)
+    {
+
+        if (fac)
+        {
+            rb.velocity = new Vector2(-10f, 0);
+            // rb.AddForce(new Vector2(200, 0), ForceMode2D.Impulse);
+        }
+        else
+        {
+            rb.velocity = new Vector2(10f, 0);
+            // rb.AddForce(new Vector2(200, 0), ForceMode2D.Impulse);
+        }
+    }
 
 
 }
